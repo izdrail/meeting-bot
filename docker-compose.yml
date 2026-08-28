@@ -40,6 +40,14 @@ services:
       - GOOGLE_CHROME_CDP_URL=${GOOGLE_CHROME_CDP_URL-http://chrome-cdp:9223}
     ports:
       - "3000:3000"
+    # Local dev only: one stable name for "the machine running Docker", so the
+    # container can reach services on the host — object storage, Mongo, Redis, the
+    # backend itself. Needed because some addresses must be identical on both
+    # sides: an S3 presigned URL signs the Host header, so the backend cannot sign
+    # 127.0.0.1 and hand the container host.docker.internal. Map it to 127.0.0.1 in
+    # the host machine's hosts file. Harmless when unused.
+    extra_hosts:
+      - "host.internal:host-gateway"
     volumes:
       - .:/usr/src/app
       - ./.chrome:/usr/src/app/.chrome
