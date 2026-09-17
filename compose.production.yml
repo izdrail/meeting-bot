@@ -1,0 +1,70 @@
+name: meetings-izdrail
+
+services:
+  meeting-bot:
+    image: izdrail/meetings.izdrail.com:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      UPLOADER_TYPE: local
+      RECORDINGS_DIR: /recordings
+      REDIS_HOST: redis
+      # The bundled CDP browser is the reliable path for Google Meet.
+      GOOGLE_CHROME_CDP_URL: http://chrome-cdp:9223
+    ports:
+      - "${APP_PORT_HOST:-3000}:3000"
+    shm_size: "1gb"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - recordings:/recordings
+      - recordings_tmp:/usr/src/app/dist/_tempvideo
+    depends_on:
+      redis:
+        condition: service_healthy
+      chrome-cdp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT_HOST:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  chrome-cdp:
+    image: izdrail/meetings.izdrail.com-chrome-cdp:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    shm_size: "1gb"
+    expose:
+      - "9223"
+    volumes:
+      - chrome_profile:/tmp/chrome-profile
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9223/json/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  redis_data:
+  chrome_profile:
+  recordings:
+  recordings_tmp:

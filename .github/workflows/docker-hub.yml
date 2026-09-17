@@ -1,0 +1,78 @@
+name: Docker Hub
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-hub-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: izdrail/meetings.izdrail.com
+  CHROME_IMAGE: izdrail/meetings.izdrail.com-chrome-cdp
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Main image metadata
+        id: main_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,prefix=sha-
+
+      - name: Chrome image metadata
+        id: chrome_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.CHROME_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,prefix=sha-
+
+      - name: Build and push meeting bot
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.production
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.main_meta.outputs.tags }}
+          labels: ${{ steps.main_meta.outputs.labels }}
+          cache-from: type=gha,scope=meeting-bot
+          cache-to: type=gha,mode=max,scope=meeting-bot
+
+      - name: Build and push Chrome CDP sidecar
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.chrome-cdp
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.chrome_meta.outputs.tags }}
+          labels: ${{ steps.chrome_meta.outputs.labels }}
+          cache-from: type=gha,scope=chrome-cdp
+          cache-to: type=gha,mode=max,scope=chrome-cdp

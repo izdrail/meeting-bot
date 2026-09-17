@@ -5,3 +5,8 @@ dist
 .git
 .gitignore
 .vscode
+.env
+.chrome/
+assets/screenshots/
+debug-videos/
+dist/_tempvideo/

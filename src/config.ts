@@ -19,17 +19,6 @@ export const NODE_ENV: Environment = ENVIRONMENTS.includes(
 
 console.log('NODE_ENV', process.env.NODE_ENV);
 
-const requiredSettings = [
-  'GCP_DEFAULT_REGION',
-  'GCP_MISC_BUCKET',
-];
-const missingSettings = requiredSettings.filter((s) => !process.env[s]);
-if (missingSettings.length > 0) {
-  missingSettings.forEach((ms) =>
-    console.error(`ENV settings ${ms} is missing.`)
-  );
-}
-
 const constructRedisUri = () => {
   const host = process.env.REDIS_HOST || 'redis';
   const port = process.env.REDIS_PORT || 6379;
@@ -127,5 +116,6 @@ export default {
     signedUrlTtlSeconds: process.env.AZURE_SIGNED_URL_TTL_SECONDS ? Number(process.env.AZURE_SIGNED_URL_TTL_SECONDS) : 3600,
     uploadConcurrency: process.env.AZURE_UPLOAD_CONCURRENCY ? Number(process.env.AZURE_UPLOAD_CONCURRENCY) : 4,
   },
-  uploaderType: process.env.UPLOADER_TYPE ? (process.env.UPLOADER_TYPE as UploaderType) : 's3' as UploaderType,
+  recordingsDir: process.env.RECORDINGS_DIR || '/recordings',
+  uploaderType: process.env.UPLOADER_TYPE ? (process.env.UPLOADER_TYPE as UploaderType) : 'local' as UploaderType,
 };

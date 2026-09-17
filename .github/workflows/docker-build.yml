@@ -1,13 +1,7 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    branches:
-      - '**'  # Build and push on all branches
-  pull_request:
-    branches:
-      - main  # Build-only (no push) so the required "build" check reports on PRs,
-              # including PRs from forks (no registry secrets needed since we don't push)
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io

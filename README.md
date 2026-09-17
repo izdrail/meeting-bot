@@ -649,3 +649,65 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Note**: This project is for educational and legitimate automation purposes. Please ensure compliance with the terms of service of the platforms you're automating.
+
+## Self-host with Docker Hub (`izdrail/meetings.izdrail.com`)
+
+This fork ships a production image and a complete Compose stack. The stack contains:
+
+- `izdrail/meetings.izdrail.com`: API and meeting recorder on port 3000
+- `izdrail/meetings.izdrail.com-chrome-cdp`: private Chrome sidecar for Google Meet
+- Redis 7: optional job queue and completion queue
+
+The Chrome DevTools port is intentionally only available inside the Compose network.
+
+### First run
+
+```bash
+git clone https://github.com/izdrail/meeting-bot.git
+cd meeting-bot
+cp .env.example .env
+# Edit .env if you want to change the defaults.
+docker compose -f compose.production.yml pull
+docker compose -f compose.production.yml up -d
+docker compose -f compose.production.yml ps
+curl --fail http://localhost:3000/health
+```
+
+To build the exact images locally instead of pulling them:
+
+```bash
+docker build -f Dockerfile.production -t izdrail/meetings.izdrail.com:latest .
+docker build -f Dockerfile.chrome-cdp -t izdrail/meetings.izdrail.com-chrome-cdp:latest .
+docker compose -f compose.production.yml up -d
+```
+
+Update or stop the stack:
+
+```bash
+docker compose -f compose.production.yml pull
+docker compose -f compose.production.yml up -d
+docker compose -f compose.production.yml down
+# Add -v only if you also want to delete Redis data and the Chrome profile.
+```
+
+`.env.example` lists every setting needed by this self-hosted stack. REST endpoints work with `REDIS_CONSUMER_ENABLED=false`; Redis remains available so queue mode can be enabled without changing the stack. Completed recordings are moved to `/recordings/<userId>/` inside the container and persist in the `recordings` named volume. No S3, Azure, or ScreenApp backend is required.
+
+List or copy recordings from the volume:
+
+```bash
+docker compose -f compose.production.yml exec meeting-bot find /recordings -type f
+docker compose -f compose.production.yml cp meeting-bot:/recordings ./recordings-backup
+```
+
+To use a host directory instead, replace `recordings:/recordings` in `compose.production.yml` with `./recordings:/recordings` and create it with permissions writable by uid 1001.
+
+Google, Microsoft, and Zoom can still require a meeting host to admit the bot. Use a dedicated, consented meeting identity where the provider requires sign-in. The persistent `chrome_profile` volume keeps the Chrome sidecar profile across restarts, but credentials are not included in either image.
+
+### Publish to Docker Hub
+
+The `Docker Hub` GitHub Actions workflow builds both images on pull requests and publishes them from `main` and `v*` tags. Create these repository Actions secrets:
+
+- `DOCKERHUB_USERNAME`: `izdrail`
+- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push both repositories
+
+Create the Docker Hub repositories `izdrail/meetings.izdrail.com` and `izdrail/meetings.izdrail.com-chrome-cdp` before the first push if the Docker Hub account does not allow automatic repository creation.

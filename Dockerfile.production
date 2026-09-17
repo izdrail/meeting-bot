@@ -82,7 +82,8 @@ RUN npm run build
 USER root
 RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
-RUN mkdir -p /usr/src/app/dist/_tempvideo \
+RUN mkdir -p /usr/src/app/dist/_tempvideo /recordings \
+    && chown -R nodejs:nodejs /recordings \
     && chmod -R 777 /usr/src/app/dist/_tempvideo
 
 # Create PulseAudio directories for non-root user

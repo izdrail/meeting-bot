@@ -626,6 +626,33 @@ class DiskUploader implements IUploader {
     return success;
   }
 
+  private async storeRecordingLocally(): Promise<boolean> {
+    const sourcePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
+    const safeUserId = this._userId.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safePrefix = fileNameTemplate(this._namePrefix, getTimeString(this._timezone, this._logger))
+      .replace(/[^a-zA-Z0-9._ -]/g, '_');
+    const targetDir = path.resolve(config.recordingsDir, safeUserId);
+    const targetPath = path.join(targetDir, `${safePrefix}-${this._tempFileId}${this.fileExtension}`);
+
+    await fs.promises.mkdir(targetDir, { recursive: true });
+    await fs.promises.rename(sourcePath, targetPath).catch(async (err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EXDEV') throw err;
+      await fs.promises.copyFile(sourcePath, targetPath);
+      await fs.promises.unlink(sourcePath);
+    });
+
+    const stats = await fs.promises.stat(targetPath);
+    this.lastUploadedBlobUrl = `file://${targetPath}`;
+    this.lastStorageDetails = {
+      provider: 'local',
+      path: targetPath,
+      sizeBytes: stats.size,
+      duration: this.recordingDuration,
+    };
+    this._logger.info('Recording stored locally', this.lastStorageDetails);
+    return true;
+  }
+
   private async uploadRecordingToObjectStorage(): Promise<boolean> {
     const provider = getStorageProvider();
     this._logger.info(`Uploading recording to object storage using provider: ${provider.name}...`);
@@ -766,11 +793,13 @@ class DiskUploader implements IUploader {
         this.forceUpload = options.forceUpload;
       }
 
+      // Flush queued chunks before checking the file. The first asynchronous write may
+      // still be opening the file when recording completion is requested.
+      const goodToGo = await this.finalizeDiskWriting();
+
       if (!await this.tempFileExists()) {
         throw new Error(`Unable to access the temp recording file on disk: ${this._userId} ${this._botId}`);
       }
-
-      const goodToGo = await this.finalizeDiskWriting();
 
       if (this.forceUpload) {
         this._logger.info('Force upload is enabled. Ignoring disk writing check results...', { goodToGo });
@@ -780,7 +809,9 @@ class DiskUploader implements IUploader {
 
       let uploadResult = false;
       // Upload recording to configured storage
-      if (config.uploaderType === 'screenapp') {
+      if (config.uploaderType === 'local') {
+        uploadResult = await this.storeRecordingLocally();
+      } else if (config.uploaderType === 'screenapp') {
         uploadResult = await this.uploadRecordingToScreenApp();
       } else if (config.uploaderType === 's3') {
         // Route to selected object storage provider (S3 or Azure) based on configuration
@@ -789,8 +820,10 @@ class DiskUploader implements IUploader {
         throw new Error(`Unsupported UPLOADER_TYPE configuration: ${config.uploaderType}`);
       }
 
-      // Delete temp file after the upload is finished
-      await this.deleteTempFileAsync();
+      // Remote uploads leave a temp file behind; local storage moved it into the recordings directory.
+      if (config.uploaderType !== 'local') {
+        await this.deleteTempFileAsync();
+      }
 
       // Send optional notifications on success
       if (uploadResult) {
