@@ -589,21 +589,11 @@ src/
 - **RedisMessageBroker**: Handles Redis queue operations (RPUSH/BLMOVE/LREM)
 - **RedisConsumerService**: Processes messages from Redis queue asynchronously
 
-## ⚠️ Limitations
+## ⚠️ Authentication boundaries
 
-### Meeting Join Requirements
+Meeting Bot supports direct guest joins and signed-in Google, Microsoft, and Zoom browser profiles created from the web dashboard. A join can also carry a one-meeting password/passcode. Waiting rooms that require an authenticated identity use the selected account profile.
 
-Meeting Bot supports joining meetings where users can join with a direct link without requiring authentication. The following scenarios are **not supported**:
-
-- **Sign-in Required**: Meetings that require users to sign in to the platform (Google, Microsoft, Zoom) before joining
-- **Enterprise Authentication**: Meetings that require enterprise SSO or domain-specific authentication
-- **Password Protected**: Meetings that require a password in addition to the meeting link
-- **Waiting Room with Authentication**: Meetings where the waiting room requires user identification or authentication
-
-**Supported Scenarios:**
-- ✅ Public meeting links that allow direct join
-- ✅ Meetings with waiting rooms that don't require authentication
-- ✅ Meetings where the bot can join as a guest/anonymous participant
+Interactive enterprise SSO is supported when the organization's browser flow can be completed and leaves a reusable session. No meeting bot can universally bypass identity-provider CAPTCHA, hardware keys, managed-device requirements, administrator conditional-access policy, or an expired/denied account. Reconnect the saved profile when the provider or organization requires fresh authentication. Host admission rules still apply after authentication.
 
 ## 🤝 Contributing
 
@@ -711,3 +701,91 @@ The `Docker Hub` GitHub Actions workflow builds both images on pull requests and
 - `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push both repositories
 
 Create the Docker Hub repositories `izdrail/meetings.izdrail.com` and `izdrail/meetings.izdrail.com-chrome-cdp` before the first push if the Docker Hub account does not allow automatic repository creation.
+
+## Web dashboard
+
+Open `http://localhost:3000/dashboard/` after starting either Compose stack. The dashboard is served by the existing Express process, so no second frontend service or port is needed.
+
+It provides:
+
+- provider/runtime status for Google Meet, Microsoft Teams, and Zoom
+- reusable bot identities stored in the `dashboard_data` Docker volume
+- a join form backed by the existing `POST /google/join`, `POST /microsoft/join`, and `POST /zoom/join` routes
+- recent dashboard join attempts
+- a local recording list with play and download links backed by `RECORDINGS_DIR`
+
+`bearerToken` in a join request authenticates the configured recording uploader; it is not a Google or Microsoft OAuth token. The dashboard uses persistent browser profiles for meeting authentication and keeps the provider runtime modes visible:
+
+- Google: the included Compose stack uses `GOOGLE_CHROME_CDP_URL` and the persistent Chrome profile. `GOOGLE_CHROME_USER_DATA_DIR` and `GOOGLE_CHROME_STORAGE_STATE_PATH` remain supported alternatives.
+- Microsoft: the bot uses its documented Teams browser join route. Teams may admit it as a guest or ask the host to admit it.
+
+Do not put provider passwords or access tokens into a bot definition. A bot definition contains only its display name, provider, team/user identifiers, timezone, and an optional local account-profile ID.
+
+### Dashboard API
+
+List the complete dashboard state:
+
+```bash
+curl --fail http://localhost:3000/api/dashboard
+```
+
+Create a reusable Google bot:
+
+```bash
+curl --fail --request POST http://localhost:3000/api/bots \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "provider": "google",
+    "name": "Meeting Notetaker",
+    "teamId": "local",
+    "userId": "stefan",
+    "timezone": "Europe/London"
+  }'
+```
+
+The response contains the generated bot `id`. Use it to join a meeting:
+
+```bash
+curl --fail --request POST http://localhost:3000/api/bots/BOT_ID/join \
+  --header 'Content-Type: application/json' \
+  --data '{"url":"https://meet.google.com/abc-defg-hij"}'
+```
+
+For `UPLOADER_TYPE=local`, the default `local-dashboard` bearer value is sufficient because the local uploader does not call ScreenApp. For `UPLOADER_TYPE=screenapp`, set `DASHBOARD_BEARER_TOKEN` in `.env`, or keep using the original join endpoints and pass `bearerToken` explicitly from a trusted backend. The dashboard never returns this environment value to the browser.
+
+List recordings:
+
+```bash
+curl --fail http://localhost:3000/api/recordings
+```
+
+Remove a bot definition:
+
+```bash
+curl --fail --request DELETE http://localhost:3000/api/bots/BOT_ID
+```
+
+### Authenticated meetings
+
+The dashboard can create isolated persistent Chrome profiles for Google, Microsoft, and Zoom. This is browser authentication, which is what the meeting web clients need; provider API OAuth tokens alone do not sign the browser into a meeting.
+
+1. Open **Accounts** and choose **Connect account**.
+2. Give the account a local label and open the sign-in browser.
+3. Complete the provider's normal login, MFA, or organization SSO at `http://localhost:6080/vnc.html?autoconnect=1&resize=scale`. Compose binds this console to `127.0.0.1` only; use an SSH tunnel when the bot runs on another host, and never publish port 6080 directly.
+4. Return to the dashboard and choose **Mark ready**. This closes Chrome cleanly so its session is saved.
+5. Add a bot and select that signed-in account. Join requests from that bot launch with the saved profile.
+
+The account label and state are stored in `/data/auth-accounts.json`; Chrome session data is stored under `/data/auth-profiles/<accountId>/`. Compose persists `/data` in `dashboard_data`. Passwords are entered only into the provider page and are never accepted by the meeting-bot API.
+
+Normal Google, Microsoft, and Zoom sign-in is supported. Enterprise SSO works when its browser flow can be completed interactively and leaves a reusable session. There is no universal way to automate arbitrary identity providers, hardware keys, device-compliance rules, CAPTCHA, or administrator conditional-access blocks; reconnect the profile interactively when the organization requires it.
+
+Meeting passwords are separate from account sign-in. The dashboard accepts an optional password/passcode for one join attempt, keeps it out of bot metadata and activity, and tries the provider's visible password/passcode field. Existing direct-link and anonymous joins continue to work unchanged.
+
+Direct API callers can add the optional fields to any join body:
+
+```json
+{
+  "accountId": "UUID from POST /api/accounts",
+  "meetingPassword": "one-meeting passcode"
+}
+```

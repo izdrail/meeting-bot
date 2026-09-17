@@ -26,6 +26,9 @@ RUN apt-get update && \
   gnupg \
   xorg \
   xserver-xorg \
+  x11vnc \
+  novnc \
+  websockify \
   libx11-dev \
   libxext-dev \
   dos2unix \

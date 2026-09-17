@@ -30,7 +30,7 @@ export class MicrosoftTeamsBot extends MeetBotBase {
     this._logger = logger;
     this._correlationId = correlationId;
   }
-  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader }: JoinParams): Promise<void> {
+  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, accountId, meetingPassword, uploader }: JoinParams): Promise<void> {
     const _state: BotStatus[] = ['processing'];
 
     const handleUpload = async () => {
@@ -42,7 +42,7 @@ export class MicrosoftTeamsBot extends MeetBotBase {
 
     try {
       const pushState = (st: BotStatus) => _state.push(st);
-      await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, pushState, uploader });
+      await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, accountId, meetingPassword, pushState, uploader });
 
       // Finish the upload from the temp video
       const uploadResult = await handleUpload();
@@ -95,7 +95,7 @@ export class MicrosoftTeamsBot extends MeetBotBase {
     }
   }
 
-  private async joinMeeting({ url, name, teamId, userId, eventId, botId, pushState, uploader }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
+  private async joinMeeting({ url, name, teamId, userId, eventId, botId, accountId, meetingPassword, pushState, uploader }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
     const joinButtonSelectors = [
       'button[aria-label="Join meeting from this browser"]',
       'button[aria-label="Continue on this browser"]',
@@ -131,7 +131,7 @@ export class MicrosoftTeamsBot extends MeetBotBase {
       this._logger.info('Pre-warming: Opening browser to trigger first-run dialogs...');
       let warmupPage: Page | undefined;
       try {
-        warmupPage = await createBrowserContext(url, this._correlationId, 'microsoft');
+        warmupPage = await createBrowserContext(url, this._correlationId, 'microsoft', accountId);
         this._logger.info('Pre-warming: Navigating to Teams meeting...');
         await warmupPage.goto(url, { waitUntil: 'domcontentloaded' });
         await clickFirstVisibleSelector(warmupPage, joinButtonSelectors, 8000, 'Pre-warming');
@@ -159,10 +159,19 @@ export class MicrosoftTeamsBot extends MeetBotBase {
     // Second run: Actual meeting join
     this._logger.info('Launching browser for actual meeting...');
 
-    this.page = await createBrowserContext(url, this._correlationId, 'microsoft');
+    this.page = await createBrowserContext(url, this._correlationId, 'microsoft', accountId);
 
     this._logger.info('Navigating to Microsoft Teams Meeting URL...');
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    if (meetingPassword) {
+      const passwordInput = this.page.locator('input[type="password"], input[placeholder*="passcode" i], input[placeholder*="password" i]').first();
+      if (await passwordInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await passwordInput.fill(meetingPassword);
+        const submit = this.page.locator('button', { hasText: /join|continue|submit/i }).first();
+        if (await submit.isVisible({ timeout: 2000 }).catch(() => false)) await submit.click();
+      }
+    }
 
     // Try to find and click "Join from browser" button
     this._logger.info('Waiting for Join meeting from browser button...');
@@ -634,11 +643,11 @@ export class MicrosoftTeamsBot extends MeetBotBase {
             }
 
             const alonePhrases = [
-              "you're the only one here",
-              "you’re the only one here",
+              'you\'re the only one here',
+              'you’re the only one here',
               'you are the only one here',
-              "you're the only one in this meeting",
-              "you’re the only one in this meeting",
+              'you\'re the only one in this meeting',
+              'you’re the only one in this meeting',
               'you are the only one in this meeting',
               'only one in this meeting',
               'only you are here',

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Meeting Bot Control Room</title>
+  <link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">SELF-HOSTED</span><h1>Meeting Bot</h1><p>Connect the supported browser runtime, send a bot to a meeting, and keep recordings in one place.</p></div>
+    <div id="status" class="status"><span></span> Checking bot</div>
+  </header>
+  <main>
+    <nav><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="accounts">Accounts</button><button class="tab" data-tab="bots">Bots</button><button class="tab" data-tab="recordings">Recordings</button></nav>
+    <section id="overview" class="panel active">
+      <div class="section-title"><div><span class="eyebrow">PROVIDERS</span><h2>Meeting connections</h2></div><p>The bot uses browser automation. Google can use the bundled Chrome sidecar or a signed-in profile; Microsoft joins through its documented Teams endpoint.</p></div>
+      <div id="providers" class="provider-grid"></div>
+      <aside class="notice"><strong>Signed-in meetings are supported.</strong><span>Connect an account in the Accounts tab. The bot reuses that provider browser profile for meetings that require an authenticated identity.</span></aside>
+      <div class="split">
+        <article class="card"><span class="eyebrow">QUICK START</span><h2>Send a bot</h2><form id="quickJoin"><label>Bot<select id="quickBot" required></select></label><label>Meeting link<input id="meetingUrl" type="url" placeholder="https://meet.google.com/..." required></label><label>Meeting password or passcode (optional)<input id="meetingPassword" type="password" autocomplete="off"></label><button class="primary">Join meeting</button></form><p id="joinMessage" class="message"></p></article>
+        <article class="card"><span class="eyebrow">RECENT</span><h2>Activity</h2><div id="activity" class="list"></div></article>
+      </div>
+    </section>
+    <section id="accounts" class="panel">
+      <div class="section-title"><div><span class="eyebrow">AUTHENTICATION</span><h2>Connected accounts</h2><p>Each account gets its own persistent Chrome profile. Complete sign-in, MFA, or enterprise SSO in the secure browser window, then mark the session ready.</p></div><button id="showAccountForm" class="primary">Connect account</button></div>
+      <form id="accountForm" class="card form-grid hidden"><label>Provider<select id="accountProvider"><option value="google">Google</option><option value="microsoft">Microsoft</option><option value="zoom">Zoom</option></select></label><label>Account label<input id="accountLabel" placeholder="Work Google" required></label><div class="actions"><button class="primary">Create and sign in</button><button type="button" id="cancelAccount">Cancel</button></div></form>
+      <aside class="notice"><strong>Credentials stay with the provider.</strong><span>The dashboard does not collect passwords. The persistent browser profile stores the session cookies produced by the provider's own sign-in page.</span></aside><div id="accountList" class="bot-grid"></div>
+    </section>
+    <section id="bots" class="panel">
+      <div class="section-title"><div><span class="eyebrow">IDENTITIES</span><h2>Managed bots</h2></div><button id="showBotForm" class="primary">Add bot</button></div>
+      <form id="botForm" class="card form-grid hidden"><label>Provider<select id="provider"><option value="google">Google Meet</option><option value="microsoft">Microsoft Teams</option><option value="zoom">Zoom</option></select></label><label>Display name<input id="botName" value="Meeting Notetaker" required></label><label>Team ID<input id="teamId" value="local" required></label><label>User ID<input id="userId" value="local" required></label><label>Timezone<input id="timezone" value="UTC" required></label><label>Signed-in account<select id="botAccount"><option value="">Anonymous / guest</option></select></label><div class="actions"><button class="primary">Save bot</button><button type="button" id="cancelBot">Cancel</button></div></form>
+      <div id="botList" class="bot-grid"></div>
+    </section>
+    <section id="recordings" class="panel"><div class="section-title"><div><span class="eyebrow">LIBRARY</span><h2>Local recordings</h2></div><button id="refresh" class="secondary">Refresh</button></div><div id="recordingList" class="recordings"></div></section>
+  </main>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>

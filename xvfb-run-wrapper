@@ -63,6 +63,12 @@ else
     ps aux | grep pulse
 fi
 
+# Expose this display to the dashboard for interactive account sign-in.
+x11vnc -display :99 -forever -shared -nopw -localhost -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
+x11vnc_pid=$!
+websockify --web=/usr/share/novnc/ 0.0.0.0:6080 localhost:5900 >/tmp/novnc.log 2>&1 &
+novnc_pid=$!
+
 # Start your application
 DISPLAY=:99 "$@" &
 child=$!
@@ -73,6 +79,7 @@ tail --pid="$child" -f /dev/null
 child_exit_code=$?
 
 # Cleanup Xvfb process
+kill -TERM "$novnc_pid" "$x11vnc_pid" 2>/dev/null
 kill -TERM "$xvfb_pid" 2>/dev/null
 wait "$xvfb_pid"
 

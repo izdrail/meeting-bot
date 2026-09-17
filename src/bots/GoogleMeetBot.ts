@@ -26,7 +26,7 @@ export class GoogleMeetBot extends MeetBotBase {
     this._correlationId = correlationId;
   }
 
-  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader }: JoinParams): Promise<void> {
+  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, accountId, meetingPassword, uploader }: JoinParams): Promise<void> {
     const _state: BotStatus[] = ['processing'];
 
     const handleUpload = async () => {
@@ -38,7 +38,7 @@ export class GoogleMeetBot extends MeetBotBase {
 
     try {
       const pushState = (st: BotStatus) => _state.push(st);
-      await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, pushState });
+      await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, accountId, meetingPassword, uploader, pushState });
 
       // Finish the upload from the temp video
       const uploadResult = await handleUpload();
@@ -86,10 +86,10 @@ export class GoogleMeetBot extends MeetBotBase {
     }
   }
 
-  private async joinMeeting({ url, name, teamId, userId, eventId, botId, pushState, uploader }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
+  private async joinMeeting({ url, name, teamId, userId, eventId, botId, accountId, meetingPassword, pushState, uploader }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
     this._logger.info('Launching browser...');
 
-    this.page = await createBrowserContext(url, this._correlationId, 'google');
+    this.page = await createBrowserContext(url, this._correlationId, 'google', accountId);
 
     this._logger.info('Navigating to Google Meet URL...');
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
