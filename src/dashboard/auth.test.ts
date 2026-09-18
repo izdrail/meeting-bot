@@ -12,6 +12,10 @@ const start = async () => {
   app.use(dashboardAuth);
   app.get('/dashboard/', (_req, res) => res.send('dashboard'));
   app.get('/api/dashboard', (_req, res) => res.json({ success: true }));
+  app.get('/health', (_req, res) => res.json({ status: 'healthy' }));
+  app.get('/isbusy', (_req, res) => res.json({ success: true, data: 0 }));
+  app.get('/metrics', (_req, res) => res.type('text/plain').send('isbusy 0'));
+  app.post('/google/join', (_req, res) => res.json({ success: true }));
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -25,6 +29,12 @@ test('dashboard login protects browser and API routes', async () => {
   process.env.DASHBOARD_SESSION_SECRET = 'test-only-secret';
   const { server, base } = await start();
   try {
+    for (const path of ['/health', '/isbusy', '/metrics']) {
+      const status = await fetch(`${base}${path}`);
+      assert.equal(status.status, 200, `${path} must stay public for platform health checks`);
+    }
+    const join = await fetch(`${base}/google/join`, { method: 'POST' });
+    assert.equal(join.status, 200, 'existing provider API routes must not inherit dashboard login');
     const denied = await fetch(`${base}/api/dashboard`);
     assert.equal(denied.status, 401);
     const browser = await fetch(`${base}/dashboard/`, { redirect: 'manual' });
