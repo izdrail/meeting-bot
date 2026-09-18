@@ -55,7 +55,15 @@ const validBearer = (req: Request): boolean => {
   return Boolean(configured && supplied && equal(supplied, configured));
 };
 
+const protectedPath = (path: string): boolean =>
+  path === '/dashboard' || path.startsWith('/dashboard/') ||
+  path === '/api/dashboard' || path.startsWith('/api/dashboard/') ||
+  path === '/api/accounts' || path.startsWith('/api/accounts/') ||
+  path === '/api/bots' || path.startsWith('/api/bots/') ||
+  path === '/api/recordings' || path.startsWith('/api/recordings/');
+
 export const dashboardAuth = (req: Request, res: Response, next: NextFunction): void => {
+  if (!protectedPath(req.path)) return next();
   const config = credentials();
   if (!config || validBearer(req) || validSession(cookie(req, 'meeting_bot_session'), config)) return next();
   if (req.path.startsWith('/api/')) {
