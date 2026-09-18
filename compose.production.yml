@@ -15,8 +15,9 @@ services:
       DASHBOARD_STATE_PATH: /data/meeting-bot-dashboard.json
       AUTH_PROFILES_DIR: /data/auth-profiles
       REDIS_HOST: redis
-      # The bundled CDP browser is the reliable path for Google Meet.
-      GOOGLE_CHROME_CDP_URL: http://chrome-cdp:9223
+      # The bundled CDP browser is the reliable path for Google Meet. Override
+      # via .env when Chrome runs elsewhere (e.g. http://host.docker.internal:9223).
+      GOOGLE_CHROME_CDP_URL: ${GOOGLE_CHROME_CDP_URL:-http://chrome-cdp:9223}
     ports:
       - "${APP_PORT_HOST:-3000}:3000"
       - "127.0.0.1:${AUTH_CONSOLE_PORT_HOST:-6080}:6080"

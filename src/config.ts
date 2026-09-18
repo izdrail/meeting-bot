@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { UploaderType } from './types';
+import { ConfigError } from './error';
 dotenv.config();
 
 const ENVIRONMENTS = [
@@ -44,19 +45,76 @@ const parseOptionalNumber = (value?: string) => {
   return Number(value);
 };
 
+
+const firstNonEmpty = (...values: Array<string | undefined>): string | undefined => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+  return undefined;
+};
+
+/**
+ * Resolve the Chrome DevTools Protocol endpoint used by the Google Meet bot.
+ * GOOGLE_CHROME_CDP_URL is the canonical variable (documented in .env.example);
+ * CHROME_CDP_URL is accepted as an alias. Blank values mean "no external
+ * Chrome" - the bot falls back to its in-container browser.
+ */
+export const resolveChromeCdpUrl = (env: NodeJS.ProcessEnv = process.env): string | undefined =>
+  firstNonEmpty(env.GOOGLE_CHROME_CDP_URL, env.CHROME_CDP_URL);
+
+/**
+ * Resolve the base URL of the ScreenApp-compatible backend used for bot
+ * status/log reporting and uploads. AUTH_BASE_URL_V2 is the canonical
+ * variable; API_BASE_URL, BACKEND_URL and APP_URL are accepted aliases.
+ * Blank/unset means "disabled" (local-only self-hosted mode) - status
+ * updates are then skipped with a clear log line instead of a TypeError.
+ */
+export const resolveAuthBaseUrlV2 = (env: NodeJS.ProcessEnv = process.env): string | undefined =>
+  firstNonEmpty(env.AUTH_BASE_URL_V2, env.API_BASE_URL, env.BACKEND_URL, env.APP_URL);
+
+const isParseableUrlWithProtocol = (value: string, protocols: string[]): boolean => {
+  try {
+    const parsed = new URL(value);
+    return protocols.includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Fail-fast startup validation for operator-supplied URLs. Throws ConfigError
+ * with an actionable message instead of letting a bad value surface later as
+ * "getaddrinfo EAI_AGAIN" or axios "Invalid URL" mid-flight.
+ */
+export const validateConfig = (env: NodeJS.ProcessEnv = process.env): void => {
+  const cdpUrl = resolveChromeCdpUrl(env);
+  if (cdpUrl && !isParseableUrlWithProtocol(cdpUrl, ['http:', 'https:', 'ws:', 'wss:'])) {
+    throw new ConfigError(
+      `Invalid configuration: GOOGLE_CHROME_CDP_URL must be an absolute http(s) or ws(s) URL, e.g. http://localhost:9223 or http://chrome-cdp:9223. Got: "${cdpUrl}"`
+    );
+  }
+
+  const authBaseUrl = resolveAuthBaseUrlV2(env);
+  if (authBaseUrl && !isParseableUrlWithProtocol(authBaseUrl, ['http:', 'https:'])) {
+    throw new ConfigError(
+      `Invalid configuration: AUTH_BASE_URL_V2 must be an absolute http(s) URL, e.g. http://localhost:8081/v2. Got: "${authBaseUrl}". Leave it unset to disable backend status reporting (local-only mode).`
+    );
+  }
+};
+
 export default {
   port: process.env.PORT || 3000,
   db: {
     host: process.env.DB_HOST || 'localhost',
     user: process,
   },
-  authBaseUrlV2: process.env.AUTH_BASE_URL_V2 ?? 'http://localhost:8081/v2',
+  authBaseUrlV2: resolveAuthBaseUrlV2(),
   // Unset MAX_RECORDING_DURATION_MINUTES to use default upper limit on duration
   maxRecordingDuration: process.env.MAX_RECORDING_DURATION_MINUTES ?
     Number(process.env.MAX_RECORDING_DURATION_MINUTES) :
     180, // There's an upper limit on meeting duration 3 hours
   chromeExecutablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', // We use Google Chrome with Playwright for recording
-  googleChromeCdpUrl: process.env.GOOGLE_CHROME_CDP_URL,
+  googleChromeCdpUrl: resolveChromeCdpUrl(),
   googleChromeUserDataDir: process.env.GOOGLE_CHROME_USER_DATA_DIR,
   googleChromeStorageStatePath: process.env.GOOGLE_CHROME_STORAGE_STATE_PATH,
   googleAnonymousJoinRequestAttempts: process.env.GOOGLE_ANONYMOUS_JOIN_REQUEST_ATTEMPTS ?

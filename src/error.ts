@@ -51,3 +51,22 @@ export class UnsupportedMeetingError extends KnownError {
     this.googleMeetPageStatus = googleMeetPageStatus;
   }
 }
+
+export class ConfigError extends KnownError {
+  constructor(message: string) {
+    super(message, false, 0);
+    this.name = 'ConfigError';
+  }
+}
+
+export class ChromeCdpConnectionError extends KnownError {
+  public cdpUrl: string;
+  public rootCause: string;
+
+  constructor(message: string, cdpUrl: string, rootCause: string, retryable = false) {
+    super(message, retryable, 0);
+    this.name = 'ChromeCdpConnectionError';
+    this.cdpUrl = cdpUrl;
+    this.rootCause = rootCause;
+  }
+}

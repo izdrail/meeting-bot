@@ -470,7 +470,8 @@ Notes:
 | `LONE_PARTICIPANT_EXIT_DELAY_SECONDS` | Delay before stopping after the bot has seen other participants and then becomes alone | `10` |
 | `TEAMS_PREWARM_ENABLED` | Enable the extra Microsoft Teams warmup browser pass for environments that still show first-run dialogs | `false` |
 | `TEAMS_AUDIO_STABILIZATION_MS` | Delay before starting Microsoft Teams ffmpeg recording after joining | `1000` |
-| `GOOGLE_CHROME_CDP_URL` | Optional CDP endpoint for Google Meet joins, e.g. `http://host.docker.internal:9222`, to use an external Chrome instead of Docker Chrome. | - |
+| `GOOGLE_CHROME_CDP_URL` | Optional CDP endpoint for Google Meet joins, e.g. `http://host.docker.internal:9222`, to use an external Chrome instead of Docker Chrome. Must be reachable from the bot process; validated at startup. `CHROME_CDP_URL` is accepted as an alias. | - |
+| `AUTH_BASE_URL_V2` | Base URL of the optional ScreenApp-compatible backend used for bot status/log reporting and uploads. Must be an absolute http(s) URL; validated at startup (fails fast). Leave unset for local-only mode - reporting is skipped with a clear log line. `API_BASE_URL`, `BACKEND_URL` and `APP_URL` are accepted aliases. | - |
 | `GOOGLE_CHROME_USER_DATA_DIR` | Optional persistent Chrome profile directory for Google Meet joins. Use a dedicated signed-in Google account profile. | - |
 | `GOOGLE_CHROME_STORAGE_STATE_PATH` | Optional Playwright storage state JSON for Google Meet joins when not using a persistent profile. | - |
 | `GOOGLE_ANONYMOUS_JOIN_REQUEST_ATTEMPTS` | Number of times to re-submit an anonymous Google Meet guest request if Meet redirects while waiting for host admission. | `10` |
@@ -524,6 +525,14 @@ containers:
     ports:
       - name: cdp
         containerPort: 9222
+    # Keep the pod unready until Chrome's CDP endpoint answers, so the bot
+    # never starts joining meetings before the browser is reachable.
+    readinessProbe:
+      httpGet:
+        path: /json/version
+        port: cdp
+      initialDelaySeconds: 5
+      periodSeconds: 5
     resources:
       requests:
         cpu: 500m
@@ -532,6 +541,27 @@ containers:
         cpu: "2"
         memory: 3Gi
 ```
+
+#### Troubleshooting: CDP and backend connectivity
+
+- **`getaddrinfo EAI_AGAIN chrome-cdp` when launching a Google Meet bot**: the
+  bot cannot resolve the `chrome-cdp` hostname. That name only exists inside
+  the docker compose network (or a Kubernetes Service named `chrome-cdp`).
+  When running the image directly (`docker run`, `NODE_ENV=production`
+  outside compose/k8s), set `GOOGLE_CHROME_CDP_URL` to a reachable endpoint -
+  `http://host.docker.internal:9223` if the sidecar runs on the same Docker
+  host, or `http://localhost:9223` when Chrome runs next to the bot. Inside
+  compose, keep the `chrome-cdp` service on the same network and rely on its
+  healthcheck (`depends_on: condition: service_healthy`); in Kubernetes, run
+  Chrome as a same-pod sidecar (`http://127.0.0.1:9222`) with the readiness
+  probe above. DNS failures are deterministic: the bot reports them once with
+  the URL, correlation ID and root cause, and does not burn join retries on
+  them.
+- **`TypeError: Invalid URL` from `patchBotStatus`**: the backend base URL was
+  empty or relative, so axios could not build the request URL. URLs are now
+  built with `new URL(path, base)` and the base is validated at startup - a
+  bad `AUTH_BASE_URL_V2` fails fast with a clear config error, and an unset
+  one disables reporting with a clear log line instead of a crash.
 
 Do not expose the CDP port through a Kubernetes Service or Ingress. Keep it local to the pod so only the bot container can control the browser.
 

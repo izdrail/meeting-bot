@@ -4,7 +4,7 @@ import http from 'http';
 import app, { redisConsumerService, setGracefulShutdown } from './app';
 import { globalJobStore } from './lib/globalJobStore';
 import messageBroker from './connect/messageBroker';
-import config from './config';
+import config, { validateConfig, resolveAuthBaseUrlV2 } from './config';
 import { isPodMarkedForDeletion } from './util/k8sLifecycle';
 import { loggerFactory } from './util/logger';
 import { initializeDashboardStorage } from './dashboard/storage';
@@ -15,6 +15,12 @@ const port = Number(config.port);
 const server = http.createServer(app);
 
 export const startServer = async (): Promise<void> => {
+  // Fail fast on operator misconfiguration (bad CDP/backend URLs) with a clear
+  // error instead of surfacing EAI_AGAIN / "Invalid URL" mid-flight.
+  validateConfig();
+  if (!resolveAuthBaseUrlV2()) {
+    console.log('AUTH_BASE_URL_V2 is not configured - bot status/log reporting to a ScreenApp-compatible backend is disabled (local-only mode).');
+  }
   await initializeDashboardStorage();
   server.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);

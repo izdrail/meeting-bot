@@ -1,7 +1,8 @@
 import { Browser, BrowserContext, Page } from 'playwright';
 import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import config from '../config';
+import config, { resolveChromeCdpUrl } from '../config';
+import { ChromeCdpConnectionError, ConfigError } from '../error';
 import { getCorrelationIdLog } from '../util/logger';
 import path from 'path';
 
@@ -225,16 +226,53 @@ async function createBrowserContext(url: string, correlationId: string, botType:
     return page;
   }
 
-  if (botType === 'google' && config.googleChromeCdpUrl) {
+  const chromeCdpUrl = botType === 'google' ? resolveChromeCdpUrl() : undefined;
+
+  if (botType === 'google' && chromeCdpUrl) {
+    try {
+      // Validate before connecting so a malformed value fails with a clear
+      // config error instead of Playwright's opaque connect failure.
+      const parsed = new URL(chromeCdpUrl);
+      if (!['http:', 'https:', 'ws:', 'wss:'].includes(parsed.protocol)) throw new Error('unsupported protocol');
+    } catch {
+      throw new ConfigError(
+        `Invalid configuration: GOOGLE_CHROME_CDP_URL must be an absolute http(s) or ws(s) URL, e.g. http://localhost:9223 or http://chrome-cdp:9223. Got: "${chromeCdpUrl}"`
+      );
+    }
+
     console.log(`${getCorrelationIdLog(correlationId)} Connecting Google bot to external Chrome`, {
-      cdpUrl: config.googleChromeCdpUrl,
+      cdpUrl: chromeCdpUrl,
     });
 
-    const browser = await launchBrowserWithTimeout(
-      async () => await chromium.connectOverCDP(config.googleChromeCdpUrl!),
-      60000,
-      correlationId
-    );
+    let browser: Browser;
+    try {
+      browser = await launchBrowserWithTimeout(
+        async () => await chromium.connectOverCDP(chromeCdpUrl),
+        60000,
+        correlationId
+      );
+    } catch (err: any) {
+      const rootCause = err?.message || String(err);
+      const host = new URL(chromeCdpUrl).hostname;
+      // DNS failures are deterministic config/network problems - retrying the
+      // join cannot fix them, so surface a non-retryable error with the fix.
+      const isDnsError = /getaddrinfo|EAI_AGAIN|ENOTFOUND/i.test(rootCause);
+      const hint = isDnsError
+        ? `DNS resolution failed for "${host}" - the Chrome CDP endpoint is not reachable by that name from this process. If you run the bot outside docker-compose/Kubernetes, set GOOGLE_CHROME_CDP_URL to a reachable endpoint (e.g. http://localhost:9223 or http://host.docker.internal:9223). Inside compose/Kubernetes, make sure the chrome-cdp service runs on the same network/pod and is healthy.`
+        : `Could not connect to the Chrome CDP endpoint at ${chromeCdpUrl}. Check that the chrome-cdp sidecar is running and healthy, and that GOOGLE_CHROME_CDP_URL points at it.`;
+      console.error(`${getCorrelationIdLog(correlationId)} Failed to connect to external Chrome via CDP`, {
+        cdpUrl: chromeCdpUrl,
+        correlationId,
+        rootCause,
+        deterministicConfigError: isDnsError,
+      });
+      throw new ChromeCdpConnectionError(
+        `Chrome CDP connection failed: ${hint} Root cause: ${rootCause}`,
+        chromeCdpUrl,
+        rootCause,
+        /* retryable */ !isDnsError
+      );
+    }
 
     const context = browser.contexts()[0] ?? await browser.newContext({
       ...contextOptions,

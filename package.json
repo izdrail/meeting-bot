@@ -10,7 +10,7 @@
     "stop": "docker compose down",
     "build": "tsc && mkdir -p dist/dashboard && cp -R src/dashboard/public dist/dashboard/public",
     "lint": "eslint \"*/**/*.{js,ts}\" --quiet --fix",
-    "test": "npm run build && node --test dist/dashboard/*.test.js"
+    "test": "npm run build && node --test dist/dashboard/*.test.js dist/config.test.js dist/services/*.test.js dist/lib/*.test.js"
   },
   "keywords": [],
   "author": "screenappai",
