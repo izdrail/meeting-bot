@@ -38,6 +38,7 @@ services:
       # Google increasingly blocks). Set GOOGLE_CHROME_CDP_URL= (empty) to fall
       # back to the in-container browser. See README.md (Usage → Join a Google Meet).
       - GOOGLE_CHROME_CDP_URL=${GOOGLE_CHROME_CDP_URL-http://chrome-cdp:9223}
+      - DASHBOARD_DATA_DIR=/data
       - DASHBOARD_STATE_PATH=/data/meeting-bot-dashboard.json
       - AUTH_PROFILES_DIR=/data/auth-profiles
     ports:

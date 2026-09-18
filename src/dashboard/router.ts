@@ -7,11 +7,11 @@ import { DashboardStore } from './store';
 import { listRecordings, resolveRecording } from './recordings';
 import { globalJobStore } from '../lib/globalJobStore';
 import { AccountService } from './accounts';
+import { authAccountsPath, authProfilesDir, dashboardStatePath } from './storage';
 
 const router = express.Router();
-const statePath = process.env.DASHBOARD_STATE_PATH || '/data/meeting-bot-dashboard.json';
-const store = new DashboardStore(statePath);
-const accounts = new AccountService(process.env.AUTH_PROFILES_DIR || '/data/auth-profiles', process.env.AUTH_ACCOUNTS_PATH || '/data/auth-accounts.json');
+const store = new DashboardStore(dashboardStatePath());
+const accounts = new AccountService(authProfilesDir(), authAccountsPath());
 const providers: MeetingProvider[] = ['google', 'microsoft', 'zoom'];
 const publicDir = path.join(__dirname, 'public');
 
@@ -65,8 +65,16 @@ router.post('/api/bots', async (req, res, next) => {
     if (!isProvider(provider) || !name || !teamId || !userId) {
       return res.status(400).json({ success: false, error: 'provider, name, teamId and userId are required' });
     }
-    const bot = await store.addBot({ provider, name, teamId, userId, timezone, accountId });
-    return res.status(201).json({ success: true, data: bot });
+    try {
+      const bot = await store.addBot({ provider, name, teamId, userId, timezone, accountId });
+      return res.status(201).json({ success: true, data: bot });
+    } catch (error) {
+      console.error('Failed to persist dashboard bot:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Bot could not be saved. Check the dashboard data directory and volume permissions.',
+      });
+    }
   } catch (error) { next(error); }
 });
 

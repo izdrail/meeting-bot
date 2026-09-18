@@ -11,6 +11,7 @@ services:
       PORT: 3000
       UPLOADER_TYPE: local
       RECORDINGS_DIR: /recordings
+      DASHBOARD_DATA_DIR: /data
       DASHBOARD_STATE_PATH: /data/meeting-bot-dashboard.json
       AUTH_PROFILES_DIR: /data/auth-profiles
       REDIS_HOST: redis

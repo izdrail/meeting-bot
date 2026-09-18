@@ -7,15 +7,26 @@ import messageBroker from './connect/messageBroker';
 import config from './config';
 import { isPodMarkedForDeletion } from './util/k8sLifecycle';
 import { loggerFactory } from './util/logger';
+import { initializeDashboardStorage } from './dashboard/storage';
 
 const port = Number(config.port);
 
-// Create Express server
+// Create Express server only after persistent dashboard storage is ready.
 const server = http.createServer(app);
 
-server.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
+export const startServer = async (): Promise<void> => {
+  await initializeDashboardStorage();
+  server.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+  });
+};
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error('Fatal startup error:', error);
+    process.exit(1);
+  });
+}
 
 // Detect the "SIGTERM lost during ContainerCreating" race: if K8s marked us for deletion
 // before the container's PID 1 existed, the SIGTERM was silently dropped. Without this
