@@ -24,6 +24,9 @@ RUN apt-get update && \
   gnupg \
   xorg \
   xserver-xorg \
+  x11vnc \
+  novnc \
+  websockify \
   libx11-dev \
   libxext-dev \
   # ARM-specific packages (only for ARM64)

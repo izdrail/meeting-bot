@@ -38,8 +38,11 @@ services:
       # Google increasingly blocks). Set GOOGLE_CHROME_CDP_URL= (empty) to fall
       # back to the in-container browser. See README.md (Usage → Join a Google Meet).
       - GOOGLE_CHROME_CDP_URL=${GOOGLE_CHROME_CDP_URL-http://chrome-cdp:9223}
+      - DASHBOARD_STATE_PATH=/data/meeting-bot-dashboard.json
+      - AUTH_PROFILES_DIR=/data/auth-profiles
     ports:
       - "3000:3000"
+      - "127.0.0.1:${AUTH_CONSOLE_PORT_HOST:-6080}:6080"
     # Local dev only: one stable name for "the machine running Docker", so the
     # container can reach services on the host — object storage, Mongo, Redis, the
     # backend itself. Needed because some addresses must be identical on both
@@ -53,6 +56,8 @@ services:
       - ./.chrome:/usr/src/app/.chrome
       - ./assets/screenshots:/usr/src/app/assets/screenshots
       - ./debug-videos:/usr/src/app/debug-videos
+      - dashboard_data:/data
+      - recordings:/recordings
       - /usr/src/app/node_modules  # Persist node_modules
     command: ["/bin/bash", "./start.sh"]
     depends_on:
@@ -84,3 +89,5 @@ services:
 
 volumes:
   cache:
+  dashboard_data:
+  recordings:

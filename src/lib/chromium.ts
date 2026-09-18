@@ -3,6 +3,7 @@ import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import config from '../config';
 import { getCorrelationIdLog } from '../util/logger';
+import path from 'path';
 
 const stealthPlugin = StealthPlugin();
 stealthPlugin.enabledEvasions.delete('iframe.contentWindow');
@@ -124,7 +125,7 @@ async function launchPersistentContextWithTimeout(launchFn: () => Promise<Browse
   });
 }
 
-async function createBrowserContext(url: string, correlationId: string, botType: BotType = 'google'): Promise<Page> {
+async function createBrowserContext(url: string, correlationId: string, botType: BotType = 'google', accountId?: string): Promise<Page> {
   const size = { width: 1280, height: 720 };
   const browserWindowSize = { width: size.width, height: size.height + 80 };
 
@@ -208,6 +209,21 @@ async function createBrowserContext(url: string, correlationId: string, botType:
       },
     }),
   };
+
+  if (accountId) {
+    if (!/^[a-f0-9-]{36}$/.test(accountId)) throw new Error('Invalid accountId');
+    const userDataDir = path.join(process.env.AUTH_PROFILES_DIR || '/data/auth-profiles', accountId);
+    const context = await launchPersistentContextWithTimeout(
+      async () => await chromium.launchPersistentContext(userDataDir, {
+        ...contextOptions, headless: false, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
+        args: [...browserArgs, ...displayArgs], ignoreDefaultArgs, executablePath: config.chromeExecutablePath,
+      }), 60000, correlationId
+    );
+    const page = context.pages()[0] ?? await context.newPage();
+    await page.setViewportSize(size);
+    attachBrowserErrorHandlers(context.browser(), context, page, correlationId);
+    return page;
+  }
 
   if (botType === 'google' && config.googleChromeCdpUrl) {
     console.log(`${getCorrelationIdLog(correlationId)} Connecting Google bot to external Chrome`, {

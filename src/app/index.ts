@@ -7,10 +7,12 @@ import microsoftRouter from './microsoft';
 import zoomRouter from './zoom';
 import { globalJobStore } from '../lib/globalJobStore';
 import { RedisConsumerService } from '../connect/RedisConsumerService';
+import dashboardRouter from '../dashboard/router';
 
 const app = express();
 
 app.use(express.json());
+app.use(dashboardRouter);
 
 // Initialize Redis consumer service
 export const redisConsumerService = new RedisConsumerService();

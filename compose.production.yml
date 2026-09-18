@@ -11,16 +11,20 @@ services:
       PORT: 3000
       UPLOADER_TYPE: local
       RECORDINGS_DIR: /recordings
+      DASHBOARD_STATE_PATH: /data/meeting-bot-dashboard.json
+      AUTH_PROFILES_DIR: /data/auth-profiles
       REDIS_HOST: redis
       # The bundled CDP browser is the reliable path for Google Meet.
       GOOGLE_CHROME_CDP_URL: http://chrome-cdp:9223
     ports:
       - "${APP_PORT_HOST:-3000}:3000"
+      - "127.0.0.1:${AUTH_CONSOLE_PORT_HOST:-6080}:6080"
     shm_size: "1gb"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - recordings:/recordings
+      - dashboard_data:/data
       - recordings_tmp:/usr/src/app/dist/_tempvideo
     depends_on:
       redis:
@@ -67,4 +71,5 @@ volumes:
   redis_data:
   chrome_profile:
   recordings:
+  dashboard_data:
   recordings_tmp:

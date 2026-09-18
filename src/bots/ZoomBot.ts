@@ -37,7 +37,7 @@ export class ZoomBot extends BotBase {
 
   // TODO use base class for shared functions such as bot status and bot logging
   // TODO Lift the JoinParams to the constructor argument
-  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader }: JoinParams): Promise<void> {
+  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, accountId, meetingPassword, uploader }: JoinParams): Promise<void> {
     const _state: BotStatus[] = ['processing'];
 
     const handleUpload = async () => {
@@ -92,7 +92,7 @@ export class ZoomBot extends BotBase {
     const { url, name } = params;
     this._logger.info('Launching browser for Zoom...', { userId: params.userId });
 
-    this.page = await createBrowserContext(url, this._correlationId, 'zoom');
+    this.page = await createBrowserContext(url, this._correlationId, 'zoom', params.accountId);
 
     await this.page.route('**/*.exe', (route) => {
       this._logger.info(`Detected .exe download: ${route.request().url()?.split('download')[0]}`);
@@ -100,6 +100,15 @@ export class ZoomBot extends BotBase {
 
     this._logger.info('Navigating to Zoom Meeting URL...');
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    if (params.meetingPassword) {
+      const passwordInput = this.page.locator('input[type="password"], input[placeholder*="passcode" i], input[placeholder*="password" i]').first();
+      if (await passwordInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await passwordInput.fill(params.meetingPassword);
+        const submit = this.page.locator('button', { hasText: /join|continue|submit/i }).first();
+        if (await submit.isVisible({ timeout: 2000 }).catch(() => false)) await submit.click();
+      }
+    }
 
     // Accept cookies
     try {
@@ -288,6 +297,15 @@ export class ZoomBot extends BotBase {
 
     if (!iframe || !foundAppContainer) {
       throw new Error(`Failed to get the Zoom PWA iframe on user ${params.userId}`);
+    }
+
+    if (params.meetingPassword) {
+      const passwordInput = iframe.locator('input[type="password"], input[placeholder*="passcode" i], input[placeholder*="password" i]').first();
+      if (await passwordInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await passwordInput.fill(params.meetingPassword);
+        const submit = iframe.locator('button', { hasText: /join|continue|submit/i }).first();
+        if (await submit.isVisible({ timeout: 2000 }).catch(() => false)) await submit.click();
+      }
     }
 
     this._logger.info('Waiting for the input field to be visible...');
