@@ -736,6 +736,10 @@ Create the Docker Hub repositories `izdrail/meetings.izdrail.com` and `izdrail/m
 
 Open `http://localhost:3000/dashboard/` after starting either Compose stack. The dashboard is served by the existing Express process, so no second frontend service or port is needed.
 
+Set `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` in `.env` to protect the dashboard and every `/api/dashboard`, `/api/accounts`, `/api/bots`, and `/api/recordings` route. Browser logins use an HTTP-only, same-site signed session cookie that expires after 12 hours. `DASHBOARD_SESSION_SECRET` is optional; set it to a long random value if you want session signing to remain independent from credential changes. Credentials and secrets are never returned or logged. Five failed attempts from one address lock login for 15 minutes.
+
+If either username or password is missing, dashboard authentication is disabled and startup logs a warning. This is convenient for local development but should not be used on a network-accessible deployment. Existing programmatic clients can authenticate with `Authorization: Bearer $DASHBOARD_BEARER_TOKEN`; this bearer path remains available when interactive login is enabled.
+
 It provides:
 
 - provider/runtime status for Google Meet, Microsoft Teams, and Zoom
@@ -756,7 +760,8 @@ Do not put provider passwords or access tokens into a bot definition. A bot defi
 List the complete dashboard state:
 
 ```bash
-curl --fail http://localhost:3000/api/dashboard
+curl --fail http://localhost:3000/api/dashboard \
+  --header "Authorization: Bearer $DASHBOARD_BEARER_TOKEN"
 ```
 
 Create a reusable Google bot:
