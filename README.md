@@ -687,7 +687,7 @@ Google, Microsoft, and Zoom can still require a meeting host to admit the bot. U
 
 ### Publish to Docker Hub
 
-The `Docker Hub` GitHub Actions workflow builds the combined image on pull requests and publishes it from `main` and `v*` tags. Create these repository Actions secrets:
+Pull requests run the Node test suite and version check without building a Docker image. After a pull request is merged, pushes to `main` build and publish the combined image to Docker Hub and GitHub Container Registry. Create these repository Actions secrets:
 
 - `DOCKERHUB_USERNAME`: `izdrail`
 - `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push the repository
