@@ -49,10 +49,16 @@ export class DashboardStore {
   }
 
   private async write(state: DashboardState): Promise<void> {
-    await fs.promises.mkdir(path.dirname(this.statePath), { recursive: true });
-    const tempPath = `${this.statePath}.${process.pid}.tmp`;
-    await fs.promises.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-    await fs.promises.rename(tempPath, this.statePath);
+    const directory = path.dirname(this.statePath);
+    await fs.promises.mkdir(directory, { recursive: true });
+    await fs.promises.access(directory, fs.constants.W_OK);
+    const tempPath = `${this.statePath}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await fs.promises.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+      await fs.promises.rename(tempPath, this.statePath);
+    } finally {
+      await fs.promises.rm(tempPath, { force: true }).catch(() => undefined);
+    }
   }
 
   async snapshot(): Promise<DashboardState> {
