@@ -9,6 +9,8 @@ export interface RecordingItem {
   updatedAt: string;
   streamUrl: string;
   downloadUrl: string;
+  transcriptTextUrl?: string;
+  transcriptJsonUrl?: string;
 }
 
 const allowedExtensions = new Set(['.webm', '.mp4', '.mkv', '.mp3', '.wav']);
@@ -44,10 +46,27 @@ export async function listRecordings(root: string): Promise<RecordingItem[]> {
         updatedAt: stats.mtime.toISOString(),
         streamUrl: `/api/recordings/${id}`,
         downloadUrl: `/api/recordings/${id}?download=1`,
+        ...await transcriptLinks(fullPath, id),
       });
     }
   }
   return recordings.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+async function transcriptLinks(recordingPath: string, id: string): Promise<Pick<RecordingItem, 'transcriptTextUrl' | 'transcriptJsonUrl'>> {
+  const [textExists, jsonExists] = await Promise.all([
+    fs.promises.access(`${recordingPath}.transcript.txt`, fs.constants.R_OK).then(() => true).catch(() => false),
+    fs.promises.access(`${recordingPath}.transcript.json`, fs.constants.R_OK).then(() => true).catch(() => false),
+  ]);
+  return {
+    ...(textExists ? { transcriptTextUrl: `/api/recordings/${id}/transcript` } : {}),
+    ...(jsonExists ? { transcriptJsonUrl: `/api/recordings/${id}/transcript?format=json` } : {}),
+  };
+}
+
+export function resolveTranscript(root: string, id: string, format: 'text' | 'json'): string | undefined {
+  const recordingPath = resolveRecording(root, id);
+  return recordingPath ? `${recordingPath}.transcript.${format === 'json' ? 'json' : 'txt'}` : undefined;
 }
 
 export function resolveRecording(root: string, id: string): string | undefined {

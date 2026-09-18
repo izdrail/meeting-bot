@@ -175,5 +175,14 @@ export default {
     uploadConcurrency: process.env.AZURE_UPLOAD_CONCURRENCY ? Number(process.env.AZURE_UPLOAD_CONCURRENCY) : 4,
   },
   recordingsDir: process.env.RECORDINGS_DIR || '/recordings',
+  transcription: {
+    enabled: process.env.TRANSCRIPTION_ENABLED === 'true',
+    url: process.env.TRANSCRIPTION_URL || 'http://whisper:9000/asr',
+    language: firstNonEmpty(process.env.TRANSCRIPTION_LANGUAGE),
+    model: firstNonEmpty(process.env.TRANSCRIPTION_MODEL) || 'small',
+    timeoutMs: process.env.TRANSCRIPTION_TIMEOUT_MINUTES
+      ? Number(process.env.TRANSCRIPTION_TIMEOUT_MINUTES) * 60_000
+      : 60 * 60_000,
+  },
   uploaderType: process.env.UPLOADER_TYPE ? (process.env.UPLOADER_TYPE as UploaderType) : 'local' as UploaderType,
 };

@@ -11,6 +11,11 @@ services:
       PORT: 3000
       UPLOADER_TYPE: local
       RECORDINGS_DIR: /recordings
+      TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-true}
+      TRANSCRIPTION_URL: ${TRANSCRIPTION_URL:-http://whisper:9000/asr}
+      TRANSCRIPTION_LANGUAGE: ${TRANSCRIPTION_LANGUAGE:-}
+      TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-small}
+      TRANSCRIPTION_TIMEOUT_MINUTES: ${TRANSCRIPTION_TIMEOUT_MINUTES:-60}
       DASHBOARD_DATA_DIR: /data
       DASHBOARD_STATE_PATH: /data/meeting-bot-dashboard.json
       AUTH_PROFILES_DIR: /data/auth-profiles
@@ -32,12 +37,30 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      whisper:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 20s
       retries: 5
+
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:v1.8.2
+    restart: unless-stopped
+    environment:
+      ASR_ENGINE: faster_whisper
+      ASR_MODEL: ${TRANSCRIPTION_MODEL:-small}
+    volumes:
+      - whisper_cache:/root/.cache
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/docs"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10m
+      retries: 10
+
 
   redis:
     image: redis:7-alpine
@@ -58,3 +81,4 @@ volumes:
   recordings:
   dashboard_data:
   recordings_tmp:
+  whisper_cache:

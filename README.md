@@ -788,3 +788,24 @@ Direct API callers can add the optional fields to any join body:
   "meetingPassword": "one-meeting passcode"
 }
 ```
+
+### Local meeting transcription
+
+The production Compose stack generates a transcript after each local recording is saved. It runs `faster-whisper` in the `whisper` container, so audio and transcripts stay on the host and there is no per-minute API bill or API key. The first start downloads the selected model into the `whisper_cache` volume. `small` is the default balance of CPU use and accuracy; use `tiny`, `base`, `medium`, or `large-v3` through `TRANSCRIPTION_MODEL` when the host's speed/memory allows it. A hosted speech API would start faster and avoid local CPU load, but would send meeting audio to a third party and add usage cost, so it is not the self-hosted default.
+
+Each recording gets two adjacent files in the recordings volume:
+
+- `<recording>.transcript.txt` - plain text
+- `<recording>.transcript.json` - text plus detected language, segments and metadata
+
+Automatic language detection is used when `TRANSCRIPTION_LANGUAGE` is blank. Pin it to an ISO language code such as `en` or `ro` when all meetings use one language. Set `TRANSCRIPTION_ENABLED=false` to keep recording without transcription. A transcription failure is logged but never deletes or fails the saved recording.
+
+The recording list includes transcript URLs when transcription is ready:
+
+```bash
+curl --fail http://localhost:3000/api/recordings
+curl --fail http://localhost:3000/api/recordings/RECORDING_ID/transcript
+curl --fail 'http://localhost:3000/api/recordings/RECORDING_ID/transcript?format=json'
+```
+
+The dashboard also shows a **Transcript** button next to completed recordings. These endpoints use the same dashboard authentication as the existing recording endpoints.
