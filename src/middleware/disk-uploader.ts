@@ -17,6 +17,7 @@ import { getStorageProvider } from '../uploader/providers/factory';
 import { getTimeString } from '../lib/datetime';
 import { notifyRecordingCompleted, RecordingCompletedPayload } from '../services/notificationService';
 import { writeWebmDurationMetadata } from '../lib/webmDuration';
+import { transcribeRecording } from '../services/transcriptionService';
 
 console.log(' ----- PWD OR CWD ----- ', process.cwd());
 
@@ -650,6 +651,24 @@ class DiskUploader implements IUploader {
       duration: this.recordingDuration,
     };
     this._logger.info('Recording stored locally', this.lastStorageDetails);
+    if (config.transcription.enabled) {
+      try {
+        const transcript = await transcribeRecording(targetPath, this._logger);
+        if (transcript && this.lastStorageDetails) {
+          this.lastStorageDetails.transcript = {
+            textPath: transcript.textPath,
+            jsonPath: transcript.jsonPath,
+            language: transcript.document.language,
+            engine: transcript.document.engine,
+            model: transcript.document.model,
+          };
+        }
+      } catch (error) {
+        // The recording is the primary artifact. Keep it even if the optional
+        // transcription worker is unavailable, and make the failure visible.
+        this._logger.error('Recording was saved but transcription failed', { targetPath, error });
+      }
+    }
     return true;
   }
 

@@ -4,7 +4,7 @@ import fs from 'fs';
 import config from '../config';
 import { MeetingProvider } from '../app/common';
 import { DashboardStore } from './store';
-import { listRecordings, resolveRecording } from './recordings';
+import { listRecordings, resolveRecording, resolveTranscript } from './recordings';
 import { globalJobStore } from '../lib/globalJobStore';
 import { AccountService } from './accounts';
 import { authAccountsPath, authProfilesDir, dashboardStatePath } from './storage';
@@ -115,6 +115,20 @@ router.post('/api/bots/:id/join', async (req, res, next) => {
 router.get('/api/recordings', async (_req, res, next) => {
   try { res.json({ success: true, data: await listRecordings(config.recordingsDir) }); }
   catch (error) { next(error); }
+});
+
+router.get('/api/recordings/:id/transcript', async (req: Request, res: Response, next) => {
+  try {
+    const format = req.query.format === 'json' ? 'json' : 'text';
+    const filePath = resolveTranscript(config.recordingsDir, req.params.id, format);
+    if (!filePath) return res.status(404).json({ success: false, error: 'Transcript not found' });
+    await fs.promises.access(filePath, fs.constants.R_OK);
+    res.type(format === 'json' ? 'application/json' : 'text/plain');
+    return res.sendFile(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return res.status(404).json({ success: false, error: 'Transcript not found' });
+    return next(error);
+  }
 });
 
 router.get('/api/recordings/:id', async (req: Request, res: Response, next) => {
