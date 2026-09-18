@@ -8,6 +8,7 @@ import { listRecordings, resolveRecording } from './recordings';
 import { globalJobStore } from '../lib/globalJobStore';
 import { AccountService } from './accounts';
 import { authAccountsPath, authProfilesDir, dashboardStatePath } from './storage';
+import { dashboardAuth, login, logout } from './auth';
 
 const router = express.Router();
 const store = new DashboardStore(dashboardStatePath());
@@ -18,6 +19,11 @@ const publicDir = path.join(__dirname, 'public');
 const isProvider = (value: unknown): value is MeetingProvider => typeof value === 'string' && providers.includes(value as MeetingProvider);
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 
+router.get('/dashboard/login', (_req, res) => res.sendFile(path.join(publicDir, 'login.html')));
+router.get('/dashboard/styles.css', (_req, res) => res.sendFile(path.join(publicDir, 'styles.css')));
+router.post('/api/dashboard/login', login);
+router.post('/api/dashboard/logout', logout);
+router.use(dashboardAuth);
 router.use('/dashboard', express.static(publicDir));
 router.get('/', (_req, res) => res.redirect('/dashboard/'));
 

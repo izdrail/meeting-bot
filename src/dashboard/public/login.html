@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in - Meeting Bot</title>
+  <link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="card login-card">
+      <span class="eyebrow">SELF-HOSTED</span>
+      <h1>Meeting Bot</h1>
+      <p>Sign in to open the control room.</p>
+      <form id="loginForm">
+        <label>Username<input id="username" name="username" autocomplete="username" required autofocus></label>
+        <label>Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary">Sign in</button>
+      </form>
+      <p id="loginMessage" class="message error" role="alert"></p>
+    </section>
+  </main>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const message = document.getElementById('loginMessage');
+      message.textContent = '';
+      const response = await fetch('/api/dashboard/login', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({username: document.getElementById('username').value, password: document.getElementById('password').value})
+      });
+      if (response.ok) window.location.replace('/dashboard/');
+      else message.textContent = (await response.json()).error || 'Sign in failed';
+    });
+  </script>
+</body>
+</html>
