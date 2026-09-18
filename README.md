@@ -89,9 +89,9 @@ Content-Type: application/json
 
 For Google Meet, you can optionally connect to an already-running Chrome via `GOOGLE_CHROME_CDP_URL`, or run the browser with a dedicated signed-in Google profile by setting `GOOGLE_CHROME_USER_DATA_DIR` or `GOOGLE_CHROME_STORAGE_STATE_PATH`. The CDP option is useful when the Docker browser is treated differently from a normal Chrome. If you use CDP, launch that Chrome with `--auto-accept-this-tab-capture` so recording can select the current Meet tab without a manual browser prompt. The Chrome window and virtual display should normally use `1280,800`; the bot then sets the page viewport to `1280x720`, leaving room for Chrome's top UI without clipping the Meet controls.
 
-For Kubernetes, run Chrome as a sidecar container in the same pod and point `GOOGLE_CHROME_CDP_URL` at `http://127.0.0.1:9222`. The included `Dockerfile.chrome-cdp` builds a minimal Google Chrome + Xvfb CDP backend for that setup.
+The production image starts Chrome, Xvfb, PulseAudio, the sign-in console, and the Node app in one container. It points `GOOGLE_CHROME_CDP_URL` at the bundled Chrome on `http://127.0.0.1:9222` by default. You can still set that variable to any reachable external Chrome endpoint when a split deployment is preferable.
 
-For **local testing**, `docker compose up --build` starts the `chrome-cdp` sidecar alongside the bot and wires `GOOGLE_CHROME_CDP_URL` to it automatically (via the sidecar's nginx proxy on `9223`, which rewrites the `Host` header so cross-container CDP works). If host port `6379` is already taken by another local Redis, start with `REDIS_PORT_HOST=6380 docker compose up --build`. Join a Meet that allows guests, make sure a second participant is present (the bot leaves if it's alone), then `POST /google/join` (see above) and follow `docker compose logs -f meeting-bot`. The recording **upload will fail** without configured storage credentials — that's expected; the join and recording are what this exercises. Set `GOOGLE_CHROME_CDP_URL=` (empty) to fall back to the bot's in-container Chromium. This sidecar joins as an anonymous guest; meetings that require sign-in need a signed-in profile (`GOOGLE_CHROME_USER_DATA_DIR`/`GOOGLE_CHROME_STORAGE_STATE_PATH`), not yet wired into the local compose.
+For **local testing**, `docker compose up --build` still uses the development `chrome-cdp` sidecar so changes can be tested independently. The production Compose stack uses the single combined image. If host port `6379` is already taken by another local Redis, start with `REDIS_PORT_HOST=6380 docker compose up --build`. Join a Meet that allows guests, make sure a second participant is present (the bot leaves if it's alone), then `POST /google/join` (see above) and follow `docker compose logs -f meeting-bot`. With the default local uploader, recordings are written under `/recordings`. Set `GOOGLE_CHROME_CDP_URL=` (empty) to bypass CDP and let Playwright launch a browser per meeting. The development sidecar starts with a reusable but initially unsigned-in profile; meetings that require sign-in can use an account profile created in the dashboard.
 
 #### Join a Microsoft Teams Meeting
 ```bash
@@ -470,7 +470,7 @@ Notes:
 | `LONE_PARTICIPANT_EXIT_DELAY_SECONDS` | Delay before stopping after the bot has seen other participants and then becomes alone | `10` |
 | `TEAMS_PREWARM_ENABLED` | Enable the extra Microsoft Teams warmup browser pass for environments that still show first-run dialogs | `false` |
 | `TEAMS_AUDIO_STABILIZATION_MS` | Delay before starting Microsoft Teams ffmpeg recording after joining | `1000` |
-| `GOOGLE_CHROME_CDP_URL` | Optional CDP endpoint for Google Meet joins, e.g. `http://host.docker.internal:9222`, to use an external Chrome instead of Docker Chrome. Must be reachable from the bot process; validated at startup. `CHROME_CDP_URL` is accepted as an alias. | - |
+| `GOOGLE_CHROME_CDP_URL` | Chrome CDP endpoint for Google Meet joins. The production image defaults to its bundled Chrome at `http://127.0.0.1:9222`; set a reachable URL to use external Chrome instead. Validated at startup. `CHROME_CDP_URL` is accepted as an alias. | `http://127.0.0.1:9222` in the production image |
 | `AUTH_BASE_URL_V2` | Base URL of the optional ScreenApp-compatible backend used for bot status/log reporting and uploads. Must be an absolute http(s) URL; validated at startup (fails fast). Leave unset for local-only mode - reporting is skipped with a clear log line. `API_BASE_URL`, `BACKEND_URL` and `APP_URL` are accepted aliases. | - |
 | `GOOGLE_CHROME_USER_DATA_DIR` | Optional persistent Chrome profile directory for Google Meet joins. Use a dedicated signed-in Google account profile. | - |
 | `GOOGLE_CHROME_STORAGE_STATE_PATH` | Optional Playwright storage state JSON for Google Meet joins when not using a persistent profile. | - |
@@ -497,73 +497,37 @@ Notes:
 The project includes Docker support with separate configurations for development and production:
 
 - `Dockerfile.development` - Development build
-- `Dockerfile.production` - Optimized production build
+- `Dockerfile.production` - Combined production build with the app and bundled Chrome
 - `Dockerfile.chrome-cdp` - Google Chrome CDP backend for Kubernetes sidecar deployments
 - `docker-compose.yml` - Complete development environment
 
-#### Google Meet Chrome CDP Sidecar
+#### Bundled Chrome and optional external CDP
 
-Build and publish the Chrome backend image separately from the bot image:
+`Dockerfile.production` contains both the meeting bot and Chrome. Its entrypoint starts Xvfb, PulseAudio, the local sign-in console, Chrome CDP, and then the Node app. The `/data/chrome-profile` directory is persistent in `compose.production.yml`, so Chrome sign-in survives restarts. CDP stays on loopback and is not published.
+
+To use a separately managed Chrome instead, set an endpoint the container can reach:
 
 ```bash
-docker build -f Dockerfile.chrome-cdp -t ghcr.io/your-org/meeting-bot-chrome-cdp:latest .
-docker push ghcr.io/your-org/meeting-bot-chrome-cdp:latest
+GOOGLE_CHROME_CDP_URL=http://host.docker.internal:9223
 ```
 
-Then run it as a sidecar in the same Kubernetes pod as the bot:
-
-```yaml
-containers:
-  - name: meeting-bot
-    image: ghcr.io/your-org/meeting-bot:latest
-    env:
-      - name: GOOGLE_CHROME_CDP_URL
-        value: http://127.0.0.1:9222
-
-  - name: chrome-cdp
-    image: ghcr.io/your-org/meeting-bot-chrome-cdp:latest
-    ports:
-      - name: cdp
-        containerPort: 9222
-    # Keep the pod unready until Chrome's CDP endpoint answers, so the bot
-    # never starts joining meetings before the browser is reachable.
-    readinessProbe:
-      httpGet:
-        path: /json/version
-        port: cdp
-      initialDelaySeconds: 5
-      periodSeconds: 5
-    resources:
-      requests:
-        cpu: 500m
-        memory: 1Gi
-      limits:
-        cpu: "2"
-        memory: 3Gi
-```
+The legacy `Dockerfile.chrome-cdp` remains available for custom split or Kubernetes deployments, but release workflows no longer build or publish a second image.
 
 #### Troubleshooting: CDP and backend connectivity
 
-- **`getaddrinfo EAI_AGAIN chrome-cdp` when launching a Google Meet bot**: the
-  bot cannot resolve the `chrome-cdp` hostname. That name only exists inside
-  the docker compose network (or a Kubernetes Service named `chrome-cdp`).
-  When running the image directly (`docker run`, `NODE_ENV=production`
-  outside compose/k8s), set `GOOGLE_CHROME_CDP_URL` to a reachable endpoint -
-  `http://host.docker.internal:9223` if the sidecar runs on the same Docker
-  host, or `http://localhost:9223` when Chrome runs next to the bot. Inside
-  compose, keep the `chrome-cdp` service on the same network and rely on its
-  healthcheck (`depends_on: condition: service_healthy`); in Kubernetes, run
-  Chrome as a same-pod sidecar (`http://127.0.0.1:9222`) with the readiness
-  probe above. DNS failures are deterministic: the bot reports them once with
-  the URL, correlation ID and root cause, and does not burn join retries on
-  them.
+- **CDP connection errors**: leave `GOOGLE_CHROME_CDP_URL` unset when using
+  the combined production image, which defaults to `http://127.0.0.1:9222`.
+  For an external browser, set an absolute endpoint reachable from the bot
+  container, such as `http://host.docker.internal:9223`. DNS failures are
+  deterministic: the bot reports them once with the URL, correlation ID and
+  root cause, and does not burn join retries on them.
 - **`TypeError: Invalid URL` from `patchBotStatus`**: the backend base URL was
   empty or relative, so axios could not build the request URL. URLs are now
   built with `new URL(path, base)` and the base is validated at startup - a
   bad `AUTH_BASE_URL_V2` fails fast with a clear config error, and an unset
   one disables reporting with a clear log line instead of a crash.
 
-Do not expose the CDP port through a Kubernetes Service or Ingress. Keep it local to the pod so only the bot container can control the browser.
+Do not publish the bundled CDP port. Keep external CDP endpoints private so only the bot can control the browser.
 
 #### Using Docker Image from GitHub Packages
 
@@ -674,11 +638,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This fork ships a production image and a complete Compose stack. The stack contains:
 
-- `izdrail/meetings.izdrail.com`: API and meeting recorder on port 3000
-- `izdrail/meetings.izdrail.com-chrome-cdp`: private Chrome sidecar for Google Meet
+- `izdrail/meetings.izdrail.com`: API, meeting recorder, Chrome, virtual display, audio, and sign-in console
 - Redis 7: optional job queue and completion queue
 
-The Chrome DevTools port is intentionally only available inside the Compose network.
+The Chrome DevTools port is loopback-only inside the meeting-bot container.
 
 ### First run
 
@@ -693,11 +656,10 @@ docker compose -f compose.production.yml ps
 curl --fail http://localhost:3000/health
 ```
 
-To build the exact images locally instead of pulling them:
+To build the exact image locally instead of pulling it:
 
 ```bash
 docker build -f Dockerfile.production -t izdrail/meetings.izdrail.com:latest .
-docker build -f Dockerfile.chrome-cdp -t izdrail/meetings.izdrail.com-chrome-cdp:latest .
 docker compose -f compose.production.yml up -d
 ```
 
@@ -707,7 +669,7 @@ Update or stop the stack:
 docker compose -f compose.production.yml pull
 docker compose -f compose.production.yml up -d
 docker compose -f compose.production.yml down
-# Add -v only if you also want to delete Redis data and the Chrome profile.
+# Add -v only if you also want to delete Redis data, recordings, and dashboard/Chrome profile data.
 ```
 
 `.env.example` lists every setting needed by this self-hosted stack. REST endpoints work with `REDIS_CONSUMER_ENABLED=false`; Redis remains available so queue mode can be enabled without changing the stack. Completed recordings are moved to `/recordings/<userId>/` inside the container and persist in the `recordings` named volume. No S3, Azure, or ScreenApp backend is required.
@@ -721,16 +683,16 @@ docker compose -f compose.production.yml cp meeting-bot:/recordings ./recordings
 
 To use a host directory instead, replace `recordings:/recordings` in `compose.production.yml` with `./recordings:/recordings` and create it with permissions writable by uid 1001.
 
-Google, Microsoft, and Zoom can still require a meeting host to admit the bot. Use a dedicated, consented meeting identity where the provider requires sign-in. The persistent `chrome_profile` volume keeps the Chrome sidecar profile across restarts, but credentials are not included in either image.
+Google, Microsoft, and Zoom can still require a meeting host to admit the bot. Use a dedicated, consented meeting identity where the provider requires sign-in. The persistent `dashboard_data` volume includes `/data/chrome-profile`, so the bundled Chrome profile survives restarts. Credentials are not included in the image.
 
 ### Publish to Docker Hub
 
-The `Docker Hub` GitHub Actions workflow builds both images on pull requests and publishes them from `main` and `v*` tags. Create these repository Actions secrets:
+The `Docker Hub` GitHub Actions workflow builds the combined image on pull requests and publishes it from `main` and `v*` tags. Create these repository Actions secrets:
 
 - `DOCKERHUB_USERNAME`: `izdrail`
-- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push both repositories
+- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push the repository
 
-Create the Docker Hub repositories `izdrail/meetings.izdrail.com` and `izdrail/meetings.izdrail.com-chrome-cdp` before the first push if the Docker Hub account does not allow automatic repository creation.
+Create the Docker Hub repository `izdrail/meetings.izdrail.com` before the first push if the Docker Hub account does not allow automatic repository creation.
 
 ## Web dashboard
 
@@ -750,7 +712,7 @@ It provides:
 
 `bearerToken` in a join request authenticates the configured recording uploader; it is not a Google or Microsoft OAuth token. The dashboard uses persistent browser profiles for meeting authentication and keeps the provider runtime modes visible:
 
-- Google: the included Compose stack uses `GOOGLE_CHROME_CDP_URL` and the persistent Chrome profile. `GOOGLE_CHROME_USER_DATA_DIR` and `GOOGLE_CHROME_STORAGE_STATE_PATH` remain supported alternatives.
+- Google: the combined image uses its bundled Chrome CDP and persistent `/data/chrome-profile` by default. `GOOGLE_CHROME_USER_DATA_DIR` and `GOOGLE_CHROME_STORAGE_STATE_PATH` remain supported alternatives.
 - Microsoft: the bot uses its documented Teams browser join route. Teams may admit it as a guest or ask the host to admit it.
 
 Do not put provider passwords or access tokens into a bot definition. A bot definition contains only its display name, provider, team/user identifiers, timezone, and an optional local account-profile ID.

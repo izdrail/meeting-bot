@@ -15,9 +15,10 @@ services:
       DASHBOARD_STATE_PATH: /data/meeting-bot-dashboard.json
       AUTH_PROFILES_DIR: /data/auth-profiles
       REDIS_HOST: redis
-      # The bundled CDP browser is the reliable path for Google Meet. Override
-      # via .env when Chrome runs elsewhere (e.g. http://host.docker.internal:9223).
-      GOOGLE_CHROME_CDP_URL: ${GOOGLE_CHROME_CDP_URL:-http://chrome-cdp:9223}
+      # Chrome runs in this container by default. Override via .env to use an
+      # external CDP endpoint instead (e.g. http://host.docker.internal:9223).
+      GOOGLE_CHROME_CDP_URL: ${GOOGLE_CHROME_CDP_URL-http://127.0.0.1:9222}
+      CHROME_USER_DATA_DIR: /data/chrome-profile
     ports:
       - "${APP_PORT_HOST:-3000}:3000"
       - "127.0.0.1:${AUTH_CONSOLE_PORT_HOST:-6080}:6080"
@@ -30,8 +31,6 @@ services:
       - recordings_tmp:/usr/src/app/dist/_tempvideo
     depends_on:
       redis:
-        condition: service_healthy
-      chrome-cdp:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
@@ -54,24 +53,8 @@ services:
       timeout: 3s
       retries: 20
 
-  chrome-cdp:
-    image: izdrail/meetings.izdrail.com-chrome-cdp:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    restart: unless-stopped
-    shm_size: "1gb"
-    expose:
-      - "9223"
-    volumes:
-      - chrome_profile:/tmp/chrome-profile
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9223/json/version"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
 volumes:
   redis_data:
-  chrome_profile:
   recordings:
   dashboard_data:
   recordings_tmp:

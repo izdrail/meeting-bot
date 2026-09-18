@@ -32,6 +32,7 @@ RUN apt-get update && \
   libx11-dev \
   libxext-dev \
   dos2unix \
+  dumb-init \
   # ARM-specific packages (only for ARM64)
   $(if [ "$(dpkg --print-architecture)" = "arm64" ]; then echo "libgles2 libegl1 libwayland-egl1"; fi) \
   && rm -rf /var/lib/apt/lists/*
@@ -73,7 +74,9 @@ RUN npx playwright install --with-deps
 COPY . .
 
 # Set environment variables
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    GOOGLE_CHROME_CDP_URL=http://127.0.0.1:9222 \
+    CHROME_USER_DATA_DIR=/data/chrome-profile
 
 # Set xvfb-run-wrapper permissions
 RUN dos2unix /usr/src/app/xvfb-run-wrapper && \
@@ -85,9 +88,9 @@ RUN npm run build
 USER root
 RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
-RUN mkdir -p /usr/src/app/dist/_tempvideo /recordings /data \
+RUN mkdir -p /usr/src/app/dist/_tempvideo /recordings /data/chrome-profile \
     && chown -R nodejs:nodejs /usr/src/app/dist/_tempvideo /recordings /data \
-    && chmod 700 /usr/src/app/dist/_tempvideo /recordings /data
+    && chmod 700 /usr/src/app/dist/_tempvideo /recordings /data /data/chrome-profile
 
 # Create PulseAudio directories for non-root user
 RUN mkdir -p /run/user/1001 \
@@ -112,6 +115,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
 
 # Set the entry point
-ENTRYPOINT ["/usr/src/app/xvfb-run-wrapper"]
+ENTRYPOINT ["dumb-init", "--", "/usr/src/app/xvfb-run-wrapper"]
 
 CMD ["node", "dist/index.js"] 

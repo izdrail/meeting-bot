@@ -1,87 +1,106 @@
 #!/bin/bash
+set -euo pipefail
 
-# Forward SIGTERM to the node child so its graceful-shutdown handler runs.
-# We previously used SIGABRT to dodge Playwright auto-closing chrome on SIGTERM,
-# but Node doesn't reliably honor SIGABRT handlers. Playwright is now configured
-# with handleSIGTERM: false (see src/lib/chromium.ts), so SIGTERM is safe.
-trap 'echo "forwarding SIGTERM to child"; kill -SIGTERM "$child" 2>/dev/null' SIGTERM SIGINT
+# Run the API, virtual display, audio, login console, and bundled Chrome in one
+# container. dumb-init is PID 1 and reaps orphaned browser/ffmpeg processes.
+export DISPLAY="${DISPLAY:-:99}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export CHROME_USER_DATA_DIR="${CHROME_USER_DATA_DIR:-/data/chrome-profile}"
+export CHROME_REMOTE_DEBUGGING_PORT="${CHROME_REMOTE_DEBUGGING_PORT:-9222}"
 
-# Set up PulseAudio runtime directory for non-root user
-export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
-echo "Using XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
+mkdir -p "$XDG_RUNTIME_DIR" "$CHROME_USER_DATA_DIR" /tmp/.X11-unix
+chmod 700 "$XDG_RUNTIME_DIR" "$CHROME_USER_DATA_DIR"
 
-wait_for_pulseaudio() {
-    for _ in {1..25}; do
-        if pactl info >/dev/null 2>&1; then
-            return 0
-        fi
-        sleep 0.2
-    done
-    return 1
+children=()
+app_pid=""
+cleanup() {
+  trap - EXIT INT TERM
+  if [ -n "$app_pid" ]; then
+    kill -TERM "$app_pid" 2>/dev/null || true
+  fi
+  for pid in "${children[@]}"; do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
 }
+forward_shutdown() {
+  echo "Forwarding shutdown to meeting bot"
+  cleanup
+  exit 143
+}
+trap cleanup EXIT
+trap forward_shutdown INT TERM
 
-# Start Xvfb (800px height to accommodate 80px offset for address bar)
-Xvfb :99 -screen 0 1280x800x24 &
-xvfb_pid=$!
+Xvfb "$DISPLAY" -screen 0 1280x800x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
+children+=("$!")
 
-# Wait a moment for Xvfb to start
-sleep 1
-
-# Initialize PulseAudio for audio capture
-echo "Initializing PulseAudio..."
 pulseaudio --kill 2>/dev/null || true
-for _ in {1..10}; do
-    if ! pgrep -x "pulseaudio" >/dev/null; then
-        break
-    fi
-    sleep 0.1
+pulseaudio -D --exit-idle-time=-1 --log-level=info
+for _ in {1..25}; do
+  pactl info >/dev/null 2>&1 && break
+  sleep 0.2
 done
-
-# Start PulseAudio in user mode
-pulseaudio -D --exit-idle-time=-1 --log-level=info 2>&1
-
-# Verify PulseAudio is running and set up virtual devices
-if wait_for_pulseaudio && pgrep -x "pulseaudio" > /dev/null; then
-    echo "✓ PulseAudio is running (PID: $(pgrep -x pulseaudio))"
-
-    # Load null sink module (virtual audio output device)
-    SINK_ID=$(pactl load-module module-null-sink sink_name=virtual_output sink_properties=device.description="Virtual_Output" 2>&1)
-    echo "✓ Loaded null sink module (ID: $SINK_ID)"
-
-    # Set as default sink (Teams will play audio here)
-    pactl set-default-sink virtual_output 2>&1
-    echo "✓ Set virtual_output as default sink"
-
-    # Verify monitor source exists for ffmpeg
-    if pactl list sources short | grep -q "virtual_output.monitor"; then
-        echo "✓ Monitor source virtual_output.monitor is available for ffmpeg"
-    else
-        echo "✗ WARNING: Monitor source not found!"
-    fi
+if pactl info >/dev/null 2>&1; then
+  pactl load-module module-null-sink sink_name=virtual_output sink_properties=device.description=Virtual_Output >/dev/null 2>&1 || true
+  pactl set-default-sink virtual_output >/dev/null 2>&1 || true
+  echo "PulseAudio virtual output is ready"
 else
-    echo "✗ ERROR: PulseAudio failed to start"
-    ps aux | grep pulse
+  echo "WARNING: PulseAudio did not become ready"
 fi
 
-# Expose this display to the dashboard for interactive account sign-in.
-x11vnc -display :99 -forever -shared -nopw -localhost -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
-x11vnc_pid=$!
+x11vnc -display "$DISPLAY" -forever -shared -nopw -localhost -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
+children+=("$!")
 websockify --web=/usr/share/novnc/ 0.0.0.0:6080 localhost:5900 >/tmp/novnc.log 2>&1 &
-novnc_pid=$!
+children+=("$!")
 
-# Start your application
-DISPLAY=:99 "$@" &
-child=$!
+if [ "${GOOGLE_CHROME_CDP_URL:-}" = "http://127.0.0.1:${CHROME_REMOTE_DEBUGGING_PORT}" ] || [ "${GOOGLE_CHROME_CDP_URL:-}" = "http://localhost:${CHROME_REMOTE_DEBUGGING_PORT}" ]; then
+  google-chrome \
+    --remote-debugging-address=127.0.0.1 \
+    --remote-debugging-port="$CHROME_REMOTE_DEBUGGING_PORT" \
+    --remote-allow-origins='*' \
+    --user-data-dir="$CHROME_USER_DATA_DIR" \
+    --window-size=1280,800 \
+    --window-position=0,0 \
+    --force-device-scale-factor=1 \
+    --auto-accept-this-tab-capture \
+    --autoplay-policy=no-user-gesture-required \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-dev-shm-usage \
+    --disable-background-timer-throttling \
+    --disable-backgrounding-occluded-windows \
+    --disable-renderer-backgrounding \
+    --no-sandbox \
+    about:blank >/tmp/chrome.log 2>&1 &
+  chrome_pid="$!"
+  children+=("$chrome_pid")
 
-# Wait for the child process to finish. have to use these both commands
-wait "$child"
-tail --pid="$child" -f /dev/null
-child_exit_code=$?
+  chrome_ready=false
+  for _ in {1..60}; do
+    if node -e "require('http').get('http://127.0.0.1:${CHROME_REMOTE_DEBUGGING_PORT}/json/version',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"; then
+      echo "Bundled Chrome CDP is ready on 127.0.0.1:${CHROME_REMOTE_DEBUGGING_PORT}"
+      chrome_ready=true
+      break
+    fi
+    if ! kill -0 "$chrome_pid" 2>/dev/null; then
+      echo "Bundled Chrome exited before CDP became ready" >&2
+      tail -100 /tmp/chrome.log >&2 || true
+      exit 1
+    fi
+    sleep 0.25
+  done
+  if [ "$chrome_ready" != true ]; then
+    echo "Bundled Chrome CDP did not become ready" >&2
+    tail -100 /tmp/chrome.log >&2 || true
+    exit 1
+  fi
+else
+  echo "Bundled Chrome disabled; GOOGLE_CHROME_CDP_URL points elsewhere or is empty"
+fi
 
-# Cleanup Xvfb process
-kill -TERM "$novnc_pid" "$x11vnc_pid" 2>/dev/null
-kill -TERM "$xvfb_pid" 2>/dev/null
-wait "$xvfb_pid"
-
-# Exit with the application's exit code
-exit "$child_exit_code"
+DISPLAY="$DISPLAY" "$@" &
+app_pid="$!"
+wait "$app_pid"
+status="$?"
+app_pid=""
+exit "$status"
