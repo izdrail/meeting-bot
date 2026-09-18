@@ -31,7 +31,7 @@ test('transcribeRecording saves text and structured sidecars', async () => {
     const binDir = path.join(root, 'bin');
     await fs.promises.mkdir(binDir);
     const fakeFfmpeg = path.join(binDir, 'ffmpeg');
-    await fs.promises.writeFile(fakeFfmpeg, '#!/bin/sh\ncp "$3" "$13"\n', { mode: 0o755 });
+    await fs.promises.writeFile(fakeFfmpeg, '#!/bin/sh\ncp "$3" "${13}"\n', { mode: 0o755 });
     const previousPath = process.env.PATH;
     process.env.PATH = `${binDir}:${previousPath ?? ''}`;
     const result = await transcribeRecording(recording, logger);
