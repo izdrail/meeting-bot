@@ -14,7 +14,6 @@ concurrency:
 
 env:
   IMAGE: izdrail/meetings.izdrail.com
-  CHROME_IMAGE: izdrail/meetings.izdrail.com-chrome-cdp
 
 jobs:
   build:
@@ -46,16 +45,6 @@ jobs:
             type=ref,event=tag
             type=sha,prefix=sha-
 
-      - name: Chrome image metadata
-        id: chrome_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.CHROME_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
-            type=sha,prefix=sha-
-
       - name: Build and push meeting bot
         uses: docker/build-push-action@v6
         with:
@@ -67,15 +56,3 @@ jobs:
           labels: ${{ steps.main_meta.outputs.labels }}
           cache-from: type=gha,scope=meeting-bot
           cache-to: type=gha,mode=max,scope=meeting-bot
-
-      - name: Build and push Chrome CDP sidecar
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.chrome-cdp
-          platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
-          tags: ${{ steps.chrome_meta.outputs.tags }}
-          labels: ${{ steps.chrome_meta.outputs.labels }}
-          cache-from: type=gha,scope=chrome-cdp
-          cache-to: type=gha,mode=max,scope=chrome-cdp

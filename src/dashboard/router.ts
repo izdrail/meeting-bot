@@ -37,7 +37,7 @@ router.get('/api/dashboard', async (_req, res, next) => {
         providers: {
           google: {
             ready: Boolean(config.googleChromeCdpUrl || config.googleChromeUserDataDir || config.googleChromeStorageStatePath),
-            mode: config.googleChromeCdpUrl ? 'Chrome CDP sidecar' : config.googleChromeUserDataDir ? 'Chrome profile directory' : config.googleChromeStorageStatePath ? 'Playwright storage state' : 'anonymous browser',
+            mode: config.googleChromeCdpUrl ? (config.googleChromeCdpUrl.includes('127.0.0.1:9222') ? 'bundled Chrome CDP' : 'external Chrome CDP') : config.googleChromeUserDataDir ? 'Chrome profile directory' : config.googleChromeStorageStatePath ? 'Playwright storage state' : 'anonymous browser',
           },
           microsoft: { ready: true, mode: 'browser guest or meeting admission' },
           zoom: { ready: true, mode: 'browser guest or meeting admission' },
