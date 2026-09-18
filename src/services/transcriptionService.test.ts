@@ -25,10 +25,17 @@ test('transcribeRecording saves text and structured sidecars', async () => {
   const previous = { ...config.transcription };
   Object.assign(config.transcription, { enabled: true, url: `http://127.0.0.1:${address.port}/asr`, timeoutMs: 5000 });
   try {
-    // A short valid WAV generated with the same ffmpeg dependency production uses.
-    const { execFile } = await import('node:child_process');
-    await new Promise<void>((resolve, reject) => execFile('ffmpeg', ['-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.1', recording, '-y'], (error) => error ? reject(error) : resolve()));
+    // CI does not install ffmpeg. Put a deterministic stand-in first on PATH;
+    // the service still exercises execFile, multipart upload and sidecar writes.
+    await fs.promises.writeFile(recording, 'recording-bytes');
+    const binDir = path.join(root, 'bin');
+    await fs.promises.mkdir(binDir);
+    const fakeFfmpeg = path.join(binDir, 'ffmpeg');
+    await fs.promises.writeFile(fakeFfmpeg, '#!/bin/sh\nfor last do :; done\ncp "$3" "$last"\n', { mode: 0o755 });
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${previousPath ?? ''}`;
     const result = await transcribeRecording(recording, logger);
+    process.env.PATH = previousPath;
     assert(result);
     assert.equal(await fs.promises.readFile(result.textPath, 'utf8'), 'Hello from the meeting.\n');
     const document = JSON.parse(await fs.promises.readFile(result.jsonPath, 'utf8'));
